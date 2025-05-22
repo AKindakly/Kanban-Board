@@ -1,14 +1,9 @@
 <!DOCTYPE html>
-<html
-    lang="en"
-    x-data="kanbanBoard()"
-    x-init="init()"
-    xmlns:htmx="http://www.w3.org/1999/xhtml"
->
+<html lang="en" x-data="kanbanBoard()" x-init="init()">
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Kanban – Alpine + HTMX (multi‑user)</title>
+        <title>Jiroo Rezept Daily Board</title>
 
         <!-- Alpine.js -->
         <script
@@ -19,203 +14,250 @@
         <script src="https://unpkg.com/htmx.org"></script>
 
         <style>
-            .column {
+            .kanban-container {
+                padding: 1rem;
+            }
+            .kanban-board {
+                display: flex;
+            }
+            .kanban-column {
                 width: 30%;
-                border: 1px solid #000;
-                padding: 10px;
+                border: 1px solid #e2e8f0;
+                border-radius: 0.5rem;
+                padding: 1rem;
+                background: #f8fafc;
                 min-height: 450px;
             }
-            .task {
-                padding: 10px;
-                border: 1px solid gray;
-                margin-bottom: 5px;
-                background: #fff;
+            .kanban-task {
+                padding: 0.75rem;
+                border: 1px solid #e2e8f0;
+                margin-bottom: 0.5rem;
+                background: white;
+                border-radius: 0.25rem;
                 cursor: move;
+                transition: all 0.2s ease;
             }
-            .is‑done {
+            .kanban-task:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            }
+            .task-done {
                 opacity: 0.6;
                 cursor: not-allowed;
             }
-            .timestamp {
-                font-size: 10px;
-                color: gray;
-                margin-top: 4px;
-            }
-            .badge {
-                font-size: 12px;
-                margin-top: 4px;
+            .user-badge {
+                font-size: 0.75rem;
+                margin-top: 0.25rem;
+                color: #64748b;
             }
         </style>
     </head>
     <body>
-        <h2>Jiroo Rezept Daily Board</h2>
+        <div class="kanban-container">
+            <h1>Jiroo Rezept Daily Board</h1>
 
-        <div style="display: flex; gap: 20px">
-            <template x-for="status in ['todo','doing','done']" :key="status">
-                <div
-                    class="column"
-                    :id="status"
-                    @dragover.prevent
-                    @drop="dropTask($event, status)"
+            <!-- Django will inject the username later -->
+            <!-- Current user: {{ request.user.username }} -->
+
+            <div x-data="{ loading: false }" class="kanban-board">
+                <!-- Columns will be generated dynamically -->
+                <template
+                    x-for="status in ['todo','doing','done']"
+                    :key="status"
                 >
-                    <h3
-                        x-text="status.charAt(0).toUpperCase()+status.slice(1)"
-                    ></h3>
+                    <div
+                        class="kanban-column"
+                        :id="status"
+                        @dragover.prevent
+                        @drop="dropTask($event, status)"
+                    >
+                        <!-- hx-post="{% url 'update_task' %}"
+                       hx-trigger="drop delay:100ms" -->
+                        <h2
+                            x-text="status.charAt(0).toUpperCase() + status.slice(1)"
+                        ></h2>
 
-                    <template x-for="task in tasks[status]" :key="task.id">
-                        <div
-                            class="task"
-                            :id="task.id"
-                            :draggable="!task.done"
-                            :class="task.done ? 'is‑done' : ''"
-                            @dragstart="dragTask(task)"
-                            @click="toggleAssignment(task, status)"
-                        >
-                            <div x-text="task.text"></div>
+                        <template x-for="task in tasks[status]" :key="task.id">
+                            <div
+                                class="kanban-task"
+                                :id="task.id"
+                                :draggable="!task.done"
+                                :class="{ 'task-done': task.done }"
+                                @dragstart="dragTask(task)"
+                                @click="toggleAssignment(task, status)"
+                            >
+                                <div x-text="task.text"></div>
 
-                            <!-- render every user badge -->
-                            <template x-for="u in task.userList" :key="u">
-                                <div class="badge">
-                                    👤 <span x-text="u"></span>
-                                </div>
-                            </template>
+                                <template
+                                    x-for="user in task.userList"
+                                    :key="user"
+                                >
+                                    <div class="user-badge">
+                                        👤 <span x-text="user"></span>
+                                    </div>
+                                </template>
 
-                            <!-- timestamp -->
-                            <template x-if="task.doneAt">
-                                <div
-                                    class="timestamp"
-                                    x-text="'Done at: '+task.doneAt"
-                                ></div>
-                            </template>
-                        </div>
-                    </template>
-                </div>
-            </template>
+                                <template x-if="task.doneAt">
+                                    <div
+                                        class="user-badge"
+                                        x-text="'Done at: ' + task.doneAt"
+                                    ></div>
+                                </template>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+
+                <!-- Django will add CSRF token later -->
+                <!-- <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}"> -->
+            </div>
         </div>
 
         <script>
             function kanbanBoard() {
                 return {
-                    username: "Ayham", //  will come from Django later
+                    // This will come from Django later
+                    // username: "{{ request.user.username }}",
+                    username: "Ayham", // Hardcoded for now
+                    username2: "Franka",
+
                     draggedTask: null,
+                    loading: false,
+                    tasks: {},
 
-                    /* -------- sample data   --------------- */
-                    tasks: {
-                        todo: [
-                            { id: "task‑1", text: "DHL Labor" },
-                            {
-                                id: "task‑2",
-                                text: "DHL Defektur",
-                                userList: ["Ayham"],
-                            },
-                            { id: "task‑3", text: "DHL Mix" },
-                            { id: "task‑8", text: "VIPs" },
-                            { id: "task‑7", text: "SameDay" },
-                        ],
-                        doing: [
-                            {
-                                id: "task‑4",
-                                text: "Abholung Labor",
-                                userList: ["Ayham"],
-                            },
-                            {
-                                id: "task‑5",
-                                text: "Abholung Defektur",
-                                userList: ["Ayham", "Franka"],
-                            },
-                        ],
-                        done: [
-                            {
-                                id: "task‑6",
-                                text: "Abholung Mix",
-                                userList: ["Ayham"],
-                                doneAt: new Date().toLocaleString([], {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                    year: "numeric",
-                                    month: "numeric",
-                                    day: "numeric",
-                                }),
-                                done: true,
-                            },
-                        ],
-                    },
-
-                    /* ------------------- lifecycle hook (future fetch) --------------------- */
                     init() {
-                        /* fetchTasks() could run here when backend ready */
+                        // In Django, this will fetch from API
+                        // this.fetchTasks();
+
+                        // sample data
+                        this.tasks = {
+                            todo: [
+                                {
+                                    id: "task-1",
+                                    text: "DHL Labor",
+                                    userList: [],
+                                },
+                                {
+                                    id: "task-2",
+                                    text: "DHL Defektur",
+                                    userList: [this.username],
+                                },
+                                { id: "task-3", text: "DHL Mix", userList: [] },
+                                { id: "task-7", text: "SameDay", userList: [] },
+                            ],
+                            doing: [
+                                {
+                                    id: "task-4",
+                                    text: "Abholung Labor",
+                                    userList: [this.username],
+                                },
+                                {
+                                    id: "task-5",
+                                    text: "Abholung Defektur",
+                                    userList: [this.username, this.username2],
+                                },
+                                {
+                                    id: "task-8",
+                                    text: "VIPs",
+                                    userList: [this.username2],
+                                },
+                            ],
+                            done: [
+                                {
+                                    id: "task-6",
+                                    text: "Abholung Mix",
+                                    userList: [this.username],
+                                    doneAt: new Date().toLocaleString(),
+                                    done: true,
+                                },
+                            ],
+                        };
                     },
 
-                    /* ------------------- drag / drop logic --------------------------------- */
+                    // This will be used in Django version
+                    /*
+                async fetchTasks() {
+                    this.loading = true;
+                    try {
+                        const response = await htmx.ajax('GET', '/api/tasks/');
+                        this.tasks = response;
+                    } catch (error) {
+                        console.error("Failed to load tasks:", error);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+                */
+
                     dragTask(task) {
-                        if (!task.done) {
-                            this.draggedTask = task;
-                        }
+                        if (!task.done) this.draggedTask = task;
                     },
 
                     dropTask(evt, target) {
                         if (!this.draggedTask) return;
 
-                        /* confirm if going to DONE */
-                        if (target === "done") {
-                            if (
-                                !confirm(
-                                    "Are you sure you want to mark this task as done?"
-                                )
-                            ) {
-                                this.draggedTask = null;
-                                return;
-                            }
+                        if (target === "done" && !confirm("Mark as done?")) {
+                            this.draggedTask = null;
+                            return;
                         }
 
-                        /* remove from current column */
-                        Object.keys(this.tasks).forEach((st) => {
-                            this.tasks[st] = this.tasks[st].filter(
+                        // Remove from current column
+                        Object.keys(this.tasks).forEach((status) => {
+                            this.tasks[status] = this.tasks[status].filter(
                                 (t) => t.id !== this.draggedTask.id
                             );
                         });
 
-                        /* set flags */
+                        // Update task status
                         if (target === "done") {
-                            this.draggedTask.doneAt = new Date().toLocaleString(
-                                [],
-                                {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                    year: "numeric",
-                                    month: "numeric",
-                                    day: "numeric",
-                                }
-                            );
+                            this.draggedTask.doneAt =
+                                new Date().toLocaleString();
                             this.draggedTask.done = true;
                         } else {
                             this.draggedTask.doneAt = null;
                             this.draggedTask.done = false;
                         }
 
-                        /* push into new column */
+                        // Add to new column
                         this.tasks[target].push(this.draggedTask);
                         this.draggedTask = null;
+
+                        // In Django version, this will sync with backend:
+                        // this.syncTasks();
                     },
 
-                    /* ------------------- assign / unassign current user -------------------- */
                     toggleAssignment(task, status) {
-                        if (status === "done") return; // Locked
+                        if (status === "done") return;
 
-                        if (!task.userList) {
-                            task.userList = [];
-                        }
+                        const userIndex = task.userList.indexOf(this.username);
 
-                        const idx = task.userList.indexOf(this.username);
-
-                        if (idx !== -1) {
+                        if (userIndex > -1) {
                             if (confirm("Remove yourself from this task?")) {
-                                task.userList.splice(idx, 1);
+                                task.userList.splice(userIndex, 1);
                             }
                         } else {
                             task.userList.push(this.username);
                         }
+
+                        // In Django version, this will sync with backend:
+                        // this.syncTasks();
                     },
+
+                    // This will be used in Django version
+                    /*
+                async syncTasks() {
+                    this.loading = true;
+                    try {
+                        await htmx.ajax('POST', '/api/tasks/update', {
+                            values: { tasks: JSON.stringify(this.tasks) }
+                        });
+                    } catch (error) {
+                        alert("Failed to save changes");
+                    } finally {
+                        this.loading = false;
+                    }
+                }
+                */
                 };
             }
         </script>
