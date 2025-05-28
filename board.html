@@ -10,19 +10,18 @@
             src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"
             defer
         ></script>
-        <!-- htmx (for future backend calls) -->
-        <script src="https://unpkg.com/htmx.org"></script>
 
+        <!-- TODO: Replace testing CSS with Tailwind in production -->
         <style>
             .kanban-container {
                 padding: 1rem;
             }
             .kanban-board {
                 display: flex;
-                justify-content: space-between;
+                gap: 1rem;
             }
             .kanban-column {
-                width: 30%;
+                flex: 1;
                 border: 1px solid #e2e8f0;
                 border-radius: 0.5rem;
                 padding: 1rem;
@@ -56,12 +55,7 @@
     <body>
         <div class="kanban-container">
             <h1>Jiroo Rezept Daily Board</h1>
-
-            <!-- Django will inject the username later -->
-            <!-- Current user: {{ request.user.username }} -->
-
-            <div x-data="{ loading: false }" class="kanban-board">
-                <!-- Columns will be generated dynamically -->
+            <div class="kanban-board">
                 <template
                     x-for="status in ['todo','doing','done']"
                     :key="status"
@@ -70,25 +64,21 @@
                         class="kanban-column"
                         :id="status"
                         @dragover.prevent
-                        @drop="dropTask($event, status)"
+                        @drop="dropTask($event,status)"
                     >
-                        <!-- hx-post="{% url 'update_task' %}"
-                       hx-trigger="drop delay:100ms" -->
                         <h2
-                            x-text="status.charAt(0).toUpperCase() + status.slice(1)"
+                            x-text="status.charAt(0).toUpperCase()+status.slice(1)"
                         ></h2>
-
                         <template x-for="task in tasks[status]" :key="task.id">
                             <div
                                 class="kanban-task"
                                 :id="task.id"
                                 :draggable="!task.done"
-                                :class="{ 'task-done': task.done }"
+                                :class="{'task-done': task.done}"
                                 @dragstart="dragTask(task)"
-                                @click="toggleAssignment(task, status)"
+                                @click="toggleAssignment(task,status)"
                             >
                                 <div x-text="task.text"></div>
-
                                 <template
                                     x-for="user in task.userList"
                                     :key="user"
@@ -97,11 +87,10 @@
                                         👤 <span x-text="user"></span>
                                     </div>
                                 </template>
-
                                 <template x-if="task.doneAt">
                                     <div
                                         class="user-badge"
-                                        x-text="'Done at: ' + task.doneAt"
+                                        x-text="'Done at: '+task.doneAt"
                                     ></div>
                                 </template>
                             </div>
@@ -109,7 +98,7 @@
                     </div>
                 </template>
 
-                <!-- Django will add CSRF token later -->
+                <!-- Uncomment for CSRF when enabling API calls -->
                 <!-- <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}"> -->
             </div>
         </div>
@@ -117,20 +106,30 @@
         <script>
             function kanbanBoard() {
                 return {
-                    // This will come from Django later
-                    // username: "{{ request.user.username }}",
-                    username: "Ayham", // Hardcoded for now
-                    username2: "Franka",
-
+                    // TODO: replace hardcoded username with API call after backend ready
+                    username: "Ayham",
+                    csrfToken: null,
                     draggedTask: null,
-                    loading: false,
-                    tasks: {},
+                    tasks: { todo: [], doing: [], done: [] },
 
-                    init() {
-                        // In Django, this will fetch from API
-                        // this.fetchTasks();
+                    async init() {
+                        // ===== TESTING: load hardcoded data =====
+                        this.loadSampleTasks();
 
-                        // sample data
+                        // ===== WHEN BACKEND READY: =====
+                        // Fetch CSRF token
+                        // this.csrfToken = document.querySelector('input[name=csrfmiddlewaretoken]').value;
+                        // Get current user
+                        // const userRes = await fetch('/api/user/');
+                        // const userData = await userRes.json();
+                        // this.username = userData.username;
+                        // Fetch tasks
+                        // const tasksRes = await fetch('/api/tasks/');
+                        // const tasksData = await tasksRes.json();
+                        // this.tasks = tasksData;
+                    },
+
+                    loadSampleTasks() {
                         this.tasks = {
                             todo: [
                                 {
@@ -155,13 +154,9 @@
                                 {
                                     id: "task-5",
                                     text: "Abholung Defektur",
-                                    userList: [this.username, this.username2],
+                                    userList: [this.username],
                                 },
-                                {
-                                    id: "task-8",
-                                    text: "VIPs",
-                                    userList: [this.username2],
-                                },
+                                { id: "task-8", text: "VIPs", userList: [] },
                             ],
                             done: [
                                 {
@@ -175,90 +170,61 @@
                         };
                     },
 
-                    // This will be used in Django version
-                    /*
-                async fetchTasks() {
-                    this.loading = true;
-                    try {
-                        const response = await htmx.ajax('GET', '/api/tasks/');
-                        this.tasks = response;
-                    } catch (error) {
-                        console.error("Failed to load tasks:", error);
-                    } finally {
-                        this.loading = false;
-                    }
-                },
-                */
-
                     dragTask(task) {
                         if (!task.done) this.draggedTask = task;
                     },
 
                     dropTask(evt, target) {
                         if (!this.draggedTask) return;
-
                         if (target === "done" && !confirm("Mark as done?")) {
                             this.draggedTask = null;
                             return;
                         }
-
-                        // Remove from current column
-                        Object.keys(this.tasks).forEach((status) => {
-                            this.tasks[status] = this.tasks[status].filter(
+                        Object.keys(this.tasks).forEach((s) => {
+                            this.tasks[s] = this.tasks[s].filter(
                                 (t) => t.id !== this.draggedTask.id
                             );
                         });
-
-                        // Update task status
                         if (target === "done") {
+                            this.draggedTask.done = true;
                             this.draggedTask.doneAt =
                                 new Date().toLocaleString();
-                            this.draggedTask.done = true;
                         } else {
-                            this.draggedTask.doneAt = null;
                             this.draggedTask.done = false;
+                            this.draggedTask.doneAt = null;
                         }
-
-                        // Add to new column
                         this.tasks[target].push(this.draggedTask);
+                        // ===== WHEN BACKEND READY: =====
+                        // this.saveTask(this.draggedTask, target);
                         this.draggedTask = null;
-
-                        // In Django version, this will sync with backend:
-                        // this.syncTasks();
                     },
 
                     toggleAssignment(task, status) {
-                        if (status === "done") return;
-
-                        const userIndex = task.userList.indexOf(this.username);
-
-                        if (userIndex > -1) {
-                            if (confirm("Remove yourself from this task?")) {
-                                task.userList.splice(userIndex, 1);
-                            }
+                        if (status === "done" || !this.username) return;
+                        const idx = task.userList.indexOf(this.username);
+                        if (idx > -1) {
+                            if (confirm("Remove yourself from this task?"))
+                                task.userList.splice(idx, 1);
                         } else {
                             task.userList.push(this.username);
                         }
-
-                        // In Django version, this will sync with backend:
-                        // this.syncTasks();
+                        // ===== WHEN BACKEND READY: =====
+                        // this.saveTask(task, status);
                     },
 
-                    // This will be used in Django version
-                    /*
-                async syncTasks() {
-                    this.loading = true;
-                    try {
-                        await htmx.ajax('POST', '/api/tasks/update', {
-                            values: { tasks: JSON.stringify(this.tasks) }
-                        });
-                    } catch (error) {
-                        alert("Failed to save changes");
-                    } finally {
-                        this.loading = false;
-                    }
-                }
-                */
+                    // ============================================
+                    // Uncomment and implement for backend calls
+                    // async saveTask(task, status) {
+                    //     await fetch(`/api/tasks/${task.id}/move/`, {
+                    //         method: 'POST',
+                    //         headers: {
+                    //             'Content-Type': 'application/json',
+                    //             'X-CSRFToken': this.csrfToken,
+                    //         },
+                    //         body: JSON.stringify({ status, userList: task.userList })
+                    //     });
+                    // }
+                    // ============================================
                 };
             }
         </script>
